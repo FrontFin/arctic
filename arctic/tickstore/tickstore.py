@@ -216,12 +216,13 @@ class TickStore(object):
             # when we've seen the first such chunk
             try:
                 for candidate in result:
-                    chunk = self._collection.find_one({'s': candidate['start'], 'sy': candidate['_id']}, {'e': 1})
+                    chunk = self._collection.find_one({'s': candidate['start'], 'sy': candidate['_id']}, {'e': 1, 's': 1})
                     if chunk['e'].replace(tzinfo=mktz('UTC')) >= start:
-                        start_range['$gte'] = candidate['start'].replace(tzinfo=mktz('UTC'))
+                        start_range['$gte'] = chunk['s'].replace(tzinfo=mktz('UTC'))
                         break
             except StopIteration:
                 pass
+            first_dt = start_range['$gte']
 
         # Find the end bound
         if date_range.end:
