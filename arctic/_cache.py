@@ -24,11 +24,22 @@ class Cache:
         self._cachecol = None
         try:
             if cache_col not in self._cachedb.list_collection_names():
-                self._cachedb.create_collection(cache_col).create_index("date", expireAfterSeconds=cache_expiry)
+                self._cachecol = self._cachedb[cache_col]
+                try:
+                    #try create mongodb TTL
+                    self._cachecol.create_index('date', expireAfterSeconds=cache_expiry)
+                except OperationFailure as indexOp:
+                    if indexOp.code==2:
+                        #_ts is a Cosmos DB-specific field and is not accessible from MongoDB clients.
+                        # It is a reserved (system) property that contains the timestamp of the document's last modification.
+                        self._cachecol.create_index('_ts', expireAfterSeconds=cache_expiry)
+                    else:
+                        raise
+            else:
+                self._cachecol = self._cachedb[cache_col]
         except OperationFailure as op:
             logging.debug("This is fine if you are not admin. The collection should already be created for you: %s", op)
 
-        self._cachecol = self._cachedb[cache_col]
 
     def _get_cache_settings(self):
         try:

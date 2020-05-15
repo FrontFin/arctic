@@ -62,14 +62,17 @@ def enable_sharding(arctic, library_name, hashed=True, key='symbol'):
          all of Arctic's built-in stores except for BSONStore, which typically uses '_id'.
          See https://docs.mongodb.com/manual/core/sharding-shard-key/ for details.
     """
-    c = arctic._conn
     lib = arctic[library_name]._arctic_lib
+    enable_sharding_for_lib(arctic, lib, hashed, key)
+
+def enable_sharding_for_lib(arctic, lib, hashed, key):
+    c = arctic._conn
     dbname = lib._db.name
     library_name = lib.get_top_level_collection().name
     try:
-        c.admin.command('enablesharding', dbname)
+        c.admin.command('enableSharding', dbname)
     except pymongo.errors.OperationFailure as e:
-        if 'already enabled' not in str(e):
+        if 'already enabled' not in str(e) and 'Command enableSharding not found' not in str(e):
             raise
     if not hashed:
         logger.info("Range sharding '" + key + "' on: " + dbname + '.' + library_name)

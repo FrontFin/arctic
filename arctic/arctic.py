@@ -123,7 +123,7 @@ class Arctic(object):
             mongo_host.server_info()
             self.mongo_host = ",".join(["{}:{}".format(x[0], x[1]) for x in mongo_host.nodes])
             self._adminDB = self._conn.admin
-            self._cache = Cache(self._conn)
+            self._cache = Cache(self._conn, cache_db=self.DB_PREFIX)
 
     @property
     @mongo_retry
@@ -149,7 +149,7 @@ class Arctic(object):
                                                   serverSelectionTimeoutMS=self._server_selection_timeout,
                                                   **self._pymongo_kwargs)
                 self._adminDB = self.__conn.admin
-                self._cache = Cache(self.__conn)
+                self._cache = Cache(self.__conn, cache_db=self.DB_PREFIX)
 
                 # Authenticate against admin for the user
                 auth = get_auth(self.mongo_host, self._application_name, 'admin')
@@ -557,6 +557,16 @@ class ArcticLibraryBinding(object):
         The read path may choose to reduce this if secondary reads are allowed.
         """
         return self._library_coll
+
+    def enable_sharding(self, hashed=True, key='symbol'):
+        c = self.arctic._conn
+        if self.library not in self._db.list_collection_names():
+            if not hashed:
+                logger.info("Range sharding '" + key + "' on: " + self._db.name + '.' + self.library)
+                c.admin.command('shardCollection', self._db.name + '.' + self.library, key={key: 1})
+            else:
+                logger.info("Hash sharding '" + key + "' on: " + self._db.name + '.' + self.library)
+                c.admin.command('shardCollection', self._db.name + '.' + self.library, key={key: 'hashed'})
 
     def set_quota(self, quota_bytes):
         """

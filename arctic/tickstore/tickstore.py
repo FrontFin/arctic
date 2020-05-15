@@ -26,7 +26,8 @@ except ImportError:
 from ..date import DateRange, to_pandas_closed_closed, mktz, datetime_to_ms, ms_to_datetime, CLOSED_CLOSED, to_dt, utc_dt_to_local_dt
 from ..decorators import mongo_retry
 from ..exceptions import OverlappingDataException, NoDataFoundException, UnorderedDataException, UnhandledDtypeException, ArcticException
-from .._util import indent
+from .._util import indent, mongo_count, enable_sharding, enable_sharding_for_lib
+
 
 try:
     from lz4.block import compress as lz4_compress, decompress as lz4_decompress
@@ -100,19 +101,21 @@ CHUNK_VERSION_NUMBER = 3
 class TickStore(object):
 
     @classmethod
-    def initialize_library(cls, arctic_lib, **kwargs):
+    def initialize_library(cls, arctic_lib, hashed=True, **kwargs):
         TickStore(arctic_lib)._ensure_index()
-
+        
+       
     @mongo_retry
     def _ensure_index(self):
         collection = self._collection
         collection.create_index([(SYMBOL, pymongo.ASCENDING),
                                  (START, pymongo.ASCENDING)], background=True)
+        collection.create_index([(SYMBOL, pymongo.ASCENDING)], background=True)
         collection.create_index([(START, pymongo.ASCENDING)], background=True)
 
         self._metadata.create_index([(SYMBOL, pymongo.ASCENDING)], background=True, unique=True)
 
-    def __init__(self, arctic_lib, chunk_size=100000):
+    def __init__(self, arctic_lib, chunk_size=100000, hashed=True):
         """
         Parameters
         ----------
@@ -122,6 +125,7 @@ class TickStore(object):
             Number of ticks to store in a document before splitting to another document.
             if the library was obtained through get_library then set with: self._chuck_size = 10000
         """
+        self._hashed = hashed;
         self._arctic_lib = arctic_lib
         # Do we allow reading from secondaries
         self._allow_secondary = self._arctic_lib.arctic._allow_secondary
@@ -131,6 +135,8 @@ class TickStore(object):
     @mongo_retry
     def _reset(self):
         # The default collections
+        logger.info("Trying to enable sharding...")
+        self._arctic_lib.enable_sharding(hashed=self._hashed ,key=SYMBOL)
         self._collection = self._arctic_lib.get_top_level_collection()
         self._metadata = self._collection.metadata
 
@@ -704,7 +710,7 @@ class TickStore(object):
         rtn[END] = end
         rtn[START] = start
 
-        logger.warning("NB treating all values as 'exists' - no longer sparse")
+        #logger.warning("NB treating all values as 'exists' - no longer sparse")
         rowmask = Binary(lz4_compressHC(np.packbits(np.ones(len(df), dtype='uint8')).tostring()))
 
         index_name = df.index.names[0] or "index"
