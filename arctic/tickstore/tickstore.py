@@ -178,8 +178,31 @@ class TickStore(object):
             self._metadata.delete_one({SYMBOL: symbol})
         return self._collection.delete_many(query)
 
-    def list_symbols(self, date_range=None):
-        return self._collection.distinct(SYMBOL)
+    @mongo_retry
+    def list_symbols(self):
+        symbols = self._metadata.distinct(SYMBOL)
+        if len(symbols)==0:
+            #let populate metainformation with symbol details
+            #do disrtict via aggregation
+            #https://stackoverflow.com/questions/39777491/in-mongodb-how-do-i-find-distinct-values-of-a-large-sharded-collection
+            result = self._collection.aggregate( [ 
+                { "$group" : { "_id" : "$sy" } }, 
+                { "$project" : { 
+                    "_id" : False,
+                    "sy" : "$_id" 
+                } }, 
+                { "$sort": { SYMBOL: 1 } } 
+            ] )  
+            data = list()
+            symbols = list()
+            try:
+                for candidate in result:
+                    data.append({SYMBOL: candidate[SYMBOL], META: None})
+                    symbols.append(candidate[SYMBOL])
+            except StopIteration:
+                pass
+            mongo_retry(self._metadata.insert_many)(data)
+        return symbols
 
     def _mongo_date_range_query(self, symbol, date_range):
         # Handle date_range
@@ -605,8 +628,7 @@ class TickStore(object):
             buckets = self._to_buckets(data, symbol, initial_image)
         self._write(buckets)
 
-        if metadata:
-            self._metadata.replace_one({SYMBOL: symbol},
+        self._metadata.replace_one({SYMBOL: symbol},
                                        {SYMBOL: symbol, META: metadata},
                                        upsert=True)
 
